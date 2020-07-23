@@ -1,0 +1,207 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+from flask import Blueprint, render_template, abort, request,send_file,make_response
+from jinja2 import TemplateNotFound
+from datetime import datetime
+from pymongo.errors import BulkWriteError
+from flask import jsonify
+from bson.json_util import dumps
+import pymongo
+import json
+
+# from flask_httpauth import HTTPBasicAuth
+# auth = HTTPBasicAuth()
+
+Api_Controller = Blueprint('Api_Controller', __name__,
+                           template_folder='templates')
+
+
+# @Api_Controller.route('/api/Inventory')
+# def show(page):
+#    try:
+#        return render_template('pages/%s.html' % page)
+#    except TemplateNotFound:
+#        abort(404)
+
+# @auth.verify_password
+##def verify_password(username, password):
+#   if "user" == username and "password"==password:
+ #   return True
+ #  else:
+ #   return False
+
+#@Api_Controller.route('/api/swagger.json')
+#def swagger_json():
+
+    # Read before use: http://flask.pocoo.org/docs/0.12/api/#flask.send_file
+
+ #   return send_file('controllers/swagger.yml')
+
+
+def get_timestamp():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def DBConnection():
+    try:
+        myclient = pymongo.MongoClient('mongodb://dgphxmonsvdb001.phx.gapinc.dev:27017/')
+        mydb = myclient['patchit']
+        mycol = mydb['inventory']
+        return mycol
+    except pymongo.errors.ConnectionFailure as e:
+        print ('Could not connect to server: %s', e)
+
+
+# Create a handler for our read (GET) Inventory
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory', methods=['GET'])
+def read():
+    """
+    This function responds to a request for /api/Inventory
+    with the complete lists of Inventory
+
+    :return:        sorted list of Inventory
+    """
+
+    # Create the list of Inventory from our data
+    # return jsonify(INVENTORY)
+
+    try:
+        mycol = DBConnection()
+        task = dumps(mycol.find())
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        return jsonify(task)
+
+
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory/<host_id>', methods=['GET'])
+def read_one(host_id):
+    myquery = {'_id': int(host_id)}
+    mycol = DBConnection()
+    mydoc = mycol.find(myquery)
+    task = dumps(mydoc)
+    res = json.dumps(task)
+    res1=json.loads(res)
+    if len(task) == 0:
+        abort(404)
+    response=make_response(res1,200)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory', methods=['POST'])
+def create():
+    try:
+        mycol = DBConnection()
+        count = mycol.count()
+        if count == 0:
+            mylist = [{#"_id":1,
+            "hostName": request.json.get('hostname', ""),
+            "ip": request.json.get('Ip', ""),
+            "environment": request.json.get('Environment', ""),
+            "active": request.json.get('Active', ""),
+            "tag": request.json.get('Tag', ""),
+            "manufacturer": request.json.get('Manufacturer', ""),
+            "hostCategory": request.json.get('HostCategory', ""),
+            "os": {
+                "name": request.json.get('OSName', ""),
+                "version": request.json.get('OSVersion', "")
+             },
+            "owner": {  
+                "productTeam": request.json.get('ProductTeam', ""),
+                "email": request.json.get('Email', "")
+            },
+            "outageWindow": {
+                "frequency": request.json.get('OutageFrequency', ""),
+                "dayofMonth": request.json.get('OutageDayofMonth', ""),
+                "dayofWeek": request.json.get('OutageDayofWeek', ""),
+                "hourStart": request.json.get('OutageHourStart', ""),
+                "minStart": request.json.get('OutageMinStart', ""),
+                "duration": request.json.get('OutageTimeDuration', "")
+            },
+            "vcenter": {
+                "reboot": request.json.get('Reboot',""),
+                "takeSnapshot": request.json.get('TakeSnapshot', "")   
+            },
+            "validation": request.json.get('Validate', "")
+        }]
+
+        else:
+
+            mylist = [{#"_id": count+1,
+            "hostName": request.json.get('hostname', ""),
+            "ip": request.json.get('Ip', ""),
+            "environment": request.json.get('Environment', ""),
+            "active": request.json.get('Active', ""),
+            "tag": request.json.get('Tag', ""),
+            "manufacturer": request.json.get('Manufacturer', ""),
+            "hostCategory": request.json.get('HostCategory', ""),
+            "os": {
+                "name": request.json.get('OSName', ""),
+                "version": request.json.get('OSVersion', "")
+             },
+            "owner": {  
+                "productTeam": request.json.get('ProductTeam', ""),
+                "email": request.json.get('Email', "")
+            },
+            "outageWindow": {
+                "frequency": request.json.get('OutageFrequency', ""),
+                "dayofMonth": request.json.get('OutageDayofMonth', ""),
+                "dayofWeek": request.json.get('OutageDayofWeek', ""),
+                "hourStart": request.json.get('OutageHourStart', ""),
+                "minStart": request.json.get('OutageMinStart', ""),
+                "duration": request.json.get('OutageTimeDuration', "")
+            },
+            "vcenter": {
+                "reboot": request.json.get('Reboot',""),
+                "takeSnapshot": request.json.get('TakeSnapshot', "")   
+            },
+            "validation": request.json.get('Validate', "")
+        }]
+        print(mylist)
+        x = mycol.insert_many(mylist)
+        print(x)
+        task = {'status': 'Sucessfully inserted record'}
+        return jsonify(task)
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        abort(404)
+        return jsonify(task)
+
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory/<host_id>', methods=['PUT'])
+def update(host_id):
+    myquery = {'_id': int(host_id)}
+    newValues = {"$set": { "hostname": request.json.get('hostname'),"Ip": request.json.get('Ip')}} 
+    mycol = DBConnection()
+    try:
+        mycol.update_one(myquery,newValues)
+        task = {'status': 'Sucessfully updated record'}
+        return jsonify(task)
+    except Exception as e:
+     task = {'status': 'Someting went wrong in post data %s' % e}
+     abort(404)
+     return jsonify(task)
+
+@Api_Controller.route('/api/Inventory/<host_id>', methods=['DELETE'])
+def delete(host_id):
+    myquery = {'_id': int(host_id)}
+    mycol = DBConnection()
+    try:
+        mycol.delete_one(myquery)
+        task = {'status': 'Sucessfully deleted record'}
+        return jsonify(task)
+    except Exception as e:
+     task = {'status': 'Someting went wrong in post data %s' % e}
+     abort(404)
+     return jsonify(task)

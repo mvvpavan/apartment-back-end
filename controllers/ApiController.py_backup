@@ -1,0 +1,802 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+from flask import Blueprint, render_template, abort, request,send_file,make_response
+from jinja2 import TemplateNotFound
+from datetime import datetime
+from pymongo.errors import BulkWriteError
+from flask import jsonify
+from bson.json_util import dumps
+import pymongo
+import json
+import paramiko
+import datetime
+import os
+import dateparser
+
+# from flask_httpauth import HTTPBasicAuth
+# auth = HTTPBasicAuth()
+
+Api_Controller = Blueprint('Api_Controller', __name__, template_folder='templates')
+
+
+# @Api_Controller.route('/api/Inventory')
+# def show(page):
+#    try:
+#        return render_template('pages/%s.html' % page)
+#    except TemplateNotFound:
+#        abort(404)
+
+# @auth.verify_password
+##def verify_password(username, password):
+#   if "user" == username and "password"==password:
+ #   return True
+ #  else:
+ #   return False
+
+#@Api_Controller.route('/api/swagger.json')
+#def swagger_json():
+
+    # Read before use: http://flask.pocoo.org/docs/0.12/api/#flask.send_file
+
+ #   return send_file('controllers/swagger.yml')
+
+
+def get_timestamp():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def DBConnection():
+    try:
+        myclient = pymongo.MongoClient('mongodb://dgphxmonsvdb001.phx.gapinc.dev:27017/')
+        mydb = myclient['patchit']
+        mycol = mydb['test_collection']
+        return mycol
+    except pymongo.errors.ConnectionFailure as e:
+        print ('Could not connect to server: %s', e)
+
+def DBPageConnection():
+    try:
+        myclient = pymongo.MongoClient('mongodb://dgphxmonsvdb001.phx.gapinc.dev:27017/')
+        mydb = myclient['patchit']
+        mycol = mydb['Patching_pages']
+        return mycol
+    except pymongo.errors.ConnectionFailure as e:
+        print ('Could not connect to server: %s', e)
+
+def Count(myquery,mycol):
+    try:
+      mydoc = mycol.find(myquery)
+      count = mydoc.count(True)
+      return count
+    except pymongo.errors.ConnectionFailure as e:
+        print ('Could not connect to server: %s', e)
+
+
+# Create a handler for our read (GET) Inventory
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory', methods=['GET'])
+def read():
+    """
+    This function responds to a request for /api/Inventory
+    with the complete lists of Inventory
+    :return:        sorted list of Inventory
+    """
+
+    # Create the list of Inventory from our data
+    # return jsonify(INVENTORY)
+
+    try:
+        mycol = DBConnection()
+        task = dumps(mycol.find())
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        return jsonify(task)
+
+# @get API for Pages
+@Api_Controller.route('/api/page/<pageName>', methods=['GET'])
+def readPage(pageName):
+    """
+    This function responds to a request for /api/page/<pageName>
+    with the complete lists of pages
+    :return:        sorted list of pages
+    """
+
+    # Create the list of pages
+    # return jsonify(page)
+
+    try:
+        mycol = DBPageConnection()
+        task = dumps(mycol.find({"pageName": pageName}))
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        return jsonify(task)
+
+
+
+# @auth.login_required
+
+@Api_Controller.route('/api/Inventory/<hostName>', methods=['GET'])
+def read_one(hostName):
+    myquery = {'hostName': hostName}
+    print(myquery)
+    mycol = DBConnection()
+    mydoc = mycol.find(myquery)
+    task = dumps(mydoc)
+    res = json.dumps(task)
+    res1=json.loads(res)
+    if len(task) == 0:
+        abort(404)
+    response=make_response(res1,200)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+@Api_Controller.route('/api/active/<active>', methods=['GET'])
+def read_active(active):
+    myquery = {'active': active}
+    mycol = DBConnection()
+    mydoc = mycol.find(myquery)
+    task = dumps(mydoc)
+    res = json.dumps(task)
+    print(res)
+    res1=json.loads(res)
+    if len(task) == 0:
+        abort(404)
+    response=make_response(res1,200)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+@Api_Controller.route('/api/login', methods=['POST'])
+def login():
+    try:
+        username = request.get_json()['username']
+        password =  request.get_json()['password']
+        if username == "admin" and  password == "admin":
+            task = {'status': 'Success',"message": "Success"}
+            res = json.dumps(task)
+            res1=json.loads(res)
+            response=make_response(res1,200)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+        else:
+            task = {'status': 'Failed',"message": "Invalid Username and Password"}
+            res = json.dumps(task)
+            res1=json.loads(res)
+            response=make_response(res1,404)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        abort(404)
+        return jsonify(task)
+
+# @auth.login_required
+global hostName, ip, osType, osVersion, kernelVersion, unsupportedOs, cpu, memory, disk, hostType, make, model, serialNumber, takeSnapshot, kspliceStatus, lastPatchTime
+hostName=''
+ipaddress=''
+osType=''
+osVersion=''
+kernelVersion=''
+unsupportedOs=''
+cpu=''
+memory=''
+disk=''
+hostType=''
+make=''
+model=''
+serialNumber=''
+takeSnapshot=''
+kspliceStatus=''
+lastPatchTime=''
+
+@Api_Controller.route('/api/post', methods=['POST'])
+def create():
+
+        #count = mycol.count()
+        #if count == 0:
+
+
+    try:
+
+        k = paramiko.RSAKey.from_private_key_file("/home/users/unxpatch/.ssh/id_rsa.pem")
+        print(request.get_json()['hostName'])
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        print("connecting")
+        print(request.get_json()['hostName'])
+        c.connect( hostname = request.get_json()['hostName'], username = "unxpatch", pkey = k )
+        print("connected")
+        commands = [
+        "hostname -f",
+        "host ` hostname -f` | awk '{print $4}'",
+        "test0=`cat /etc/redhat-release |awk '{print $1,$2,$3,$4,$5}'`;if [ \"$test0\" = \"Red Hat Enterprise Linux Server\" ]; then echo \"RHEL\"; else echo \"$test0\"; fi",
+        "cat /etc/redhat-release | sed 's/.*release\ //' | sed 's/\ .*//'",
+        "uname -r",
+        "test1=`cat /etc/redhat-release | sed 's/.*release\ //' | sed 's/\ .*//' | cut -d \".\" -f1`;if [ $test1 -le 5 ]; then echo \"true\"; else echo \"false\"; fi",
+        "cat /proc/cpuinfo |grep -i processor |wc -l",
+        "cat /proc/meminfo |grep MemTotal|awk '{print $2/1024/1024 \"GB\"}'",
+        "lsblk -d -e 11,1 |awk '{print $4}' |grep -iv size |sed 's/G//g' |awk '{s+=$1} END {print s \"GB\"}'",
+        "test2=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test2\" = \"VMware Virtual Platform\" ]||[ \"$test2\" = \"OpenStack Nova\" ]|| [ \"$test2\" = \"Virtual Machine\" ]; then echo \"Virtual\"; else echo \"Physical\"; fi",
+        "test3=`sudo /usr/sbin/dmidecode | grep -A3 '^System Information'|grep -i manufac|awk {'print $2'}`;if [ \"$test3\" = \"VMware,\" ]; then echo \"VMware\"; else echo \"$test3\"; fi",
+        "test4=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test4\" = \"VMware Virtual Platform\" ]||[ \"$test4\" = \"Virtual Machine\" ]||[ \"$test4\" = \"OpenStack Nova\" ];then echo \"Not Applicable\"; else echo \"$test4\"; fi",
+        "test5=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test5\" = \"VMware Virtual Platform\" ]||[ \"$test5\" = \"OpenStack Nova\" ]|| [ \"$test5\" = \"Virtual Machine\" ]; then echo \"Not Applicable\"; else sudo /usr/sbin/dmidecode -s system-serial-number ; fi",
+        "rpm -qa |grep -i uptrack >> /dev/null; if [ $? = 0 ] ;then echo \"true\";else echo \"false\"; fi;",
+        "sudo yum history |egrep -v \"Loaded|RHN Classic|subscription-manager\"|grep -A 2 \"ID\"|egrep -v \"ID|----\" |cut -d '|' -f3"
+        ]
+        stdin, hostName, stderr = c.exec_command(commands[0])
+        hostName= hostName.read()
+        stdin, ip, stderr = c.exec_command(commands[1])
+        ipaddress= ip.read()
+        stdin, osType, stderr = c.exec_command(commands[2])
+        osType=osType.read()
+        stdin, osVersion, stderr = c.exec_command(commands[3])
+        osVersion=osVersion.read()
+        stdin, kernelVersion, stderr = c.exec_command(commands[4])
+        kernelVersion=kernelVersion.read()
+        stdin, unsupportedOs, stderr = c.exec_command(commands[5])
+        unsupportedOs=unsupportedOs.read()
+        stdin, cpu, stderr = c.exec_command(commands[6])
+        cpu=cpu.read()
+        stdin, memory, stderr = c.exec_command(commands[7])
+        memory=memory.read()
+        stdin, disk, stderr = c.exec_command(commands[8])
+        disk=disk.read()
+        stdin, hostType, stderr = c.exec_command(commands[9])
+        hostType=hostType.read()
+        stdin, make, stderr = c.exec_command(commands[10])
+        make=make.read()
+        stdin, model, stderr = c.exec_command(commands[11])
+        model=model.read()
+        stdin, serialNumber, stderr = c.exec_command(commands[12])
+        serialNumber=serialNumber.read()
+        stdin, kspliceStatus, stderr = c.exec_command(commands[13])
+        kspliceStatus= kspliceStatus.read()
+        stdin, lastPatchTime, stderr = c.exec_command(commands[14])
+        lastPatchTime= lastPatchTime.read()
+        c.close()
+        validResult = "true"
+        if hostName == '':
+             print("command not found: " + commands[0])
+             validResult = "false"
+        if ipaddress == '':
+                print("command not found: " + commands[1])
+                validResult = "false"
+        if osType == '':
+                print("command not found: " + commands[2])
+                validResult = "false"
+
+        if osVersion == '':
+                print("command not found: " + commands[3])
+                validResult = "false"
+
+        if kernelVersion == '':
+                print("command not found: " + commands[4])
+                validResult = "false"
+
+        if unsupportedOs == '':
+                print("command not found: " + commands[5])
+                validResult = "false"
+
+        if cpu == '':
+                print("command not found: " + commands[6])
+                validResult = "false"
+
+        if memory == '':
+                print("command not found: " + commands[7])
+                validResult = "false"
+
+        if disk == '':
+                print("command not found: " + commands[8])
+                validResult = "false"
+        if hostType == '':
+                print("command not found: " + commands[9])
+                validResult = "false"
+        if make == '':
+                print("command not found: " + commands[10])
+                validResult = "false"
+        if model == '':
+                print("command not found: " + commands[11])
+                validResult = "false"
+        if serialNumber == '':
+                print("command not found: " + commands[12])
+                validResult = "false"
+        if kspliceStatus == '':
+                print("command not found: " + commands[13])
+                validResult = "false"
+        if lastPatchTime == '':
+                print("command not found: " + commands[14])
+                validResult = "false"
+        if validResult == 'false':
+            task = {'status': 'failed',"message":"Please reachout to PT-Compute-Complaince Team"}
+            res = json.dumps(task)
+            res1=json.loads(res)
+            response=make_response(res1,404)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+    except Exception as e:
+	            #print("Unable to connect to host vm")
+                task = {'status': 'failed',"message":"Unable to connect to host vm"}
+                res = json.dumps(task)
+                res1=json.loads(res)
+                response=make_response(res1,404)
+                response.headers.add('Access-Control-Allow-Origin', '*')
+                return response
+    try:
+        hostname=str(hostName, 'utf-8').rstrip()
+        ipaddress=str(ipaddress, 'utf-8').rstrip()
+        osType=str(osType, 'utf-8').rstrip()
+        osVersion=str(osVersion, 'utf-8').rstrip()
+        kernelVersion=str(kernelVersion, 'utf-8').rstrip()
+        unsupportedOs=str(unsupportedOs, 'utf-8').rstrip()
+        cpu=str(cpu, 'utf-8').rstrip()
+        memory=str(memory, 'utf-8').rstrip()
+        disk=str(disk, 'utf-8').rstrip()
+        hostType=str(hostType, 'utf-8').rstrip()
+        make=str(make, 'utf-8').rstrip()
+        model=str(model, 'utf-8').rstrip()
+        serialNumber=str(serialNumber, 'utf-8').rstrip()
+        kspliceStatus=str(kspliceStatus, 'utf-8').rstrip()
+        lastPatchTime=str(lastPatchTime, 'utf-8').rstrip()
+        outageStartDate1 = dateparser.parse(request.get_json()['outageStartDate'])
+        outageEndDate1 = dateparser.parse(request.get_json()['outageEndDate'])
+        print(outageStartDate1.strftime('%Y-%m-%d %H:%M:%S'))
+        print(outageEndDate1.strftime('%Y-%m-%d %H:%M:%S'))
+        disk1 = int(float(disk[:-3]))
+        print(disk1)
+        if disk1 >= 500 or hostType == "Physical":
+            takeSnapshot = "false"
+        else:
+            takeSnapshot = "true"
+        if kspliceStatus == "true":
+            rebootRequired = "false"
+        else:
+           rebootRequired = "true"
+        mycol = DBConnection()
+        myquery1 = {'hostName': hostname}
+        count= Count(myquery1, mycol)
+        if count != 0:
+            task = {'status': 'failed',"message":"Already record exist"}
+            res = json.dumps(task)
+            res1=json.loads(res)
+            response=make_response(res1,404)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+        #outageStartDate1 = dateparser.parse(request.get_json()['outageStartDate'])
+        #outageEndDate1 = dateparser.parse(request.get_json()['outageEndDate'])
+        #print(outageStartDate1.strftime('%Y-%m-%d %H:%M:%S'))
+        #print(outageEndDate1.strftime('%Y-%m-%d %H:%M:%S'))
+        #outageStartDate1 = datetime.datetime.strptime(request.get_json()['outageStartDate'],"%Y-%m-%dT%H:%M:%SZ")
+        #outageEndDate1 = datetime.datetime.strptime(request.get_json()['outageEndDate'],"%Y-%m-%dT%H:%M:%SZ")
+        mylist = [{#"_id":1,
+            "hostName": hostname,
+            "ip": ipaddress,
+            "zone": request.get_json()['zone'],
+            "environment": request.get_json()['environment'],
+            "org": request.get_json()['org'],
+            "owner": {
+                "productTeam": request.get_json()['productTeam'],
+                "appName": request.get_json()['appName'],
+                "email": request.get_json()['email']
+            },
+            "hardware": {
+                "hostType": hostType,
+                "make": make,
+                "model": model,
+                "serialNumber": serialNumber,
+                "consoleInfo": request.get_json()['consoleInfo']
+            },
+            "os": {
+                "osType": osType,
+                "osVersion": osVersion,
+                "kernelVersion": kernelVersion,
+                "unsupportedOs": unsupportedOs
+            },
+            "hostConfig": {
+                "cpu": cpu,
+                "memory": memory,
+                "disk": disk
+            },
+            "dataCenterLocation": request.get_json()['dataCenterLocation'],
+            "active": request.get_json()['active'],
+            "status": request.get_json()['status'],
+            "outageWindow": {
+#              "frequency": frequency,
+                "dayOfMonth": outageStartDate1.day,
+                "dayOfWeek": outageStartDate1.strftime('%A'),
+                "hourStart": outageStartDate1.hour,
+                "minStart": outageStartDate1.minute,
+                "duration": request.get_json()['duration'],
+                "outageStartDate": outageStartDate1.strftime('%Y-%m-%d %H:%M:%S'),
+                "outageEndDate": outageEndDate1.strftime('%Y-%m-%d %H:%M:%S')
+            },
+            "vcenter": {
+                "takeSnapshot": takeSnapshot,
+                "validation": request.get_json()['validation']
+            },
+            "ksplice": {
+                "kspliceStatus": kspliceStatus
+            },
+            "rebootRequired": rebootRequired,
+            "lastPatchTime": lastPatchTime,
+#            "complianceStatus": request.get_json()['complianceStatus'],
+            "patchingException": request.get_json()['patchingException'],
+            "markedForDecom": request.get_json()['markedForDecom']
+        }]
+
+        print(mylist)
+        x = mycol.insert_many(mylist)
+        print(x)
+        task = {'status': 'Sucessfully inserted record'}
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except BulkWriteError as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+        #abort(404)
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,404)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return jsonify(response)
+
+# @auth.login_required
+@Api_Controller.route('/api/upload', methods=['POST'])
+def upload_file():
+   print (request.files)
+  # os.system("sudo rm -rf  /tmp/inventory/")
+  # os.system("sudo mkdir  /tmp/inventory/")
+   # checking if the file is present or not.
+   if 'file' not in request.files:
+     return "No file found"
+   file = request.files['file']
+   file.save("/tmp/inventory/inventory.csv")
+   os.system("cd /tmp/patching-project/gap_repos/patch-it && pipenv  install --dev && cd --")
+   os.system("cd /tmp/patching-project/gap_repos/patch-it && export MONGO_URI=mongodb://dgphxmonsvdb001.phx.gapinc.dev && pipenv run patch-it load_inventory --filename /tmp/inventory/inventory.csv && cd --")
+   task = {'status': 'Sucessfully updated record'}
+   return jsonify(task)
+
+
+@Api_Controller.route('/api/page/update', methods=['PUT'])
+def pageUpdate():
+
+    mycol = DBPageConnection()
+    try:
+        pageName = request.get_json()['pageName']
+        myquery = {"pageName": pageName}
+        newValues = {"$set": {
+            "title" : request.get_json()['title'],
+            "body" : request.get_json()['body']
+        }}
+        mycol.update_one(myquery,newValues)
+        task = {'status': 'Sucessfully updated page'}
+        res2 = json.dumps(task)
+        res1=json.loads(res2)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    except Exception as e:
+        task = {'status': 'Someting went wrong in post data %s' % e}
+       # abort(404)
+        res2 = json.dumps(task)
+        res1=json.loads(res2)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+
+
+@Api_Controller.route('/api/update', methods=['PUT'])
+def update():
+    try:
+
+        k = paramiko.RSAKey.from_private_key_file("/home/users/unxpatch/.ssh/id_rsa.pem")
+        print(request.get_json()['hostName'])
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        print("connecting")
+        print(request.get_json()['hostName'])
+        c.connect( hostname = request.get_json()['hostName'], username = "unxpatch", pkey = k )
+        print("connected")
+        commands = [
+        "hostname -f",
+        "host ` hostname -f` | awk '{print $4}'",
+        "test0=`cat /etc/redhat-release |awk '{print $1,$2,$3,$4,$5}'`;if [ \"$test0\" = \"Red Hat Enterprise Linux Server\" ]; then echo \"RHEL\"; else echo \"$test0\"; fi",
+        "cat /etc/redhat-release | sed 's/.*release\ //' | sed 's/\ .*//'",
+        "uname -r",
+        "test1=`cat /etc/redhat-release | sed 's/.*release\ //' | sed 's/\ .*//' | cut -d \".\" -f1`;if [ $test1 -le 5 ]; then echo \"true\"; else echo \"false\"; fi",
+        "cat /proc/cpuinfo |grep -i processor |wc -l",
+        "cat /proc/meminfo |grep MemTotal|awk '{print $2/1024/1024 \"GB\"}'",
+        "lsblk -d -e 11,1 |awk '{print $4}' |grep -iv size |sed 's/G//g' |awk '{s+=$1} END {print s \"GB\"}'",
+        "test2=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test2\" = \"VMware Virtual Platform\" ]||[ \"$test2\" = \"OpenStack Nova\" ]|| [ \"$test2\" = \"Virtual Machine\" ]; then echo \"Virtual\"; else echo \"Physical\"; fi",
+        "test3=`sudo /usr/sbin/dmidecode | grep -A3 '^System Information'|grep -i manufac|awk {'print $2'}`;if [ \"$test3\" = \"VMware,\" ]; then echo \"VMware\"; else echo \"$test3\"; fi",
+        "test4=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test4\" = \"VMware Virtual Platform\" ]||[ \"$test4\" = \"Virtual Machine\" ]||[ \"$test4\" = \"OpenStack Nova\" ];then echo \"Not Applicable\"; else echo \"$test4\"; fi",
+        "test5=`sudo /usr/sbin/dmidecode -s system-product-name`;if [ \"$test5\" = \"VMware Virtual Platform\" ]||[ \"$test5\" = \"OpenStack Nova\" ]|| [ \"$test5\" = \"Virtual Machine\" ]; then echo \"Not Applicable\"; else sudo /usr/sbin/dmidecode -s system-serial-number ; fi",
+        "rpm -qa |grep -i uptrack >> /dev/null; if [ $? = 0 ] ;then echo \"true\";else echo \"false\"; fi;",
+        "sudo yum history |egrep -v \"Loaded|RHN Classic|subscription-manager\"|grep -A 2 \"ID\"|egrep -v \"ID|----\" |cut -d '|' -f3"
+        ]
+        stdin, hostName, stderr = c.exec_command(commands[0])
+        hostName= hostName.read()
+        stdin, ip, stderr = c.exec_command(commands[1])
+        ipaddress= ip.read()
+        stdin, osType, stderr = c.exec_command(commands[2])
+        osType=osType.read()
+        stdin, osVersion, stderr = c.exec_command(commands[3])
+        osVersion=osVersion.read()
+        stdin, kernelVersion, stderr = c.exec_command(commands[4])
+        kernelVersion=kernelVersion.read()
+        stdin, unsupportedOs, stderr = c.exec_command(commands[5])
+        unsupportedOs=unsupportedOs.read()
+        stdin, cpu, stderr = c.exec_command(commands[6])
+        cpu=cpu.read()
+        stdin, memory, stderr = c.exec_command(commands[7])
+        memory=memory.read()
+        stdin, disk, stderr = c.exec_command(commands[8])
+        disk=disk.read()
+        stdin, hostType, stderr = c.exec_command(commands[9])
+        hostType=hostType.read()
+        stdin, make, stderr = c.exec_command(commands[10])
+        make=make.read()
+        stdin, model, stderr = c.exec_command(commands[11])
+        model=model.read()
+        stdin, serialNumber, stderr = c.exec_command(commands[12])
+        serialNumber=serialNumber.read()
+        stdin, kspliceStatus, stderr = c.exec_command(commands[13])
+        kspliceStatus= kspliceStatus.read()
+        stdin, lastPatchTime, stderr = c.exec_command(commands[14])
+        lastPatchTime=lastPatchTime.read()
+        c.close()
+        validResult = "true"
+        if hostName == '':
+             print("command not found: " + commands[0])
+             validResult = "false"
+        if ipaddress == '':
+                print("command not found: " + commands[1])
+                validResult = "false"
+        if osType == '':
+                print("command not found: " + commands[2])
+                validResult = "false"
+
+        if osVersion == '':
+                print("command not found: " + commands[3])
+                validResult = "false"
+
+        if kernelVersion == '':
+                print("command not found: " + commands[4])
+                validResult = "false"
+
+        if unsupportedOs == '':
+                print("command not found: " + commands[5])
+                validResult = "false"
+
+        if cpu == '':
+                print("command not found: " + commands[6])
+                validResult = "false"
+
+        if memory == '':
+                print("command not found: " + commands[7])
+                validResult = "false"
+
+        if disk == '':
+                print("command not found: " + commands[8])
+                validResult = "false"
+        if hostType == '':
+                print("command not found: " + commands[9])
+                validResult = "false"
+        if make == '':
+                print("command not found: " + commands[10])
+                validResult = "false"
+        if model == '':
+                print("command not found: " + commands[11])
+                validResult = "false"
+        if serialNumber == '':
+                print("command not found: " + commands[12])
+                validResult = "false"
+        if kspliceStatus == '':
+                print("command not found: " + commands[13])
+                validResult = "false"
+        if lastPatchTime == '':
+                print("command not found: " + commands[14])
+                validResult = "false"
+        disk1 = int(float(disk[:-3]))
+        if disk1 >= 500 or hostType == "Physical" :
+            takeSnapshot = "false"
+        else:
+            takeSnapshot = "true"
+        if kspliceStatus == "true":
+            rebootRequired = "false"
+        else:
+           rebootRequired = "true"
+        if validResult == 'false':
+            task = {'status': 'failed',"message":"Please reachout to PT-Compute-Complaince Team"}
+            res = json.dumps(task)
+            res1=json.loads(res)
+            response=make_response(res1,404)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+    except Exception as e:
+	            #print("Unable to connect to host vm")
+                task = {'status': 'failed',"message":"Unable to connect to host vm"+e}
+                res = json.dumps(task)
+                res1=json.loads(res)
+                response=make_response(res1,404)
+                response.headers.add('Access-Control-Allow-Origin', '*')
+                return response
+    hostname=str(hostName, 'utf-8').rstrip()
+    ipaddress=str(ipaddress, 'utf-8').rstrip()
+    osType=str(osType, 'utf-8').rstrip()
+    osVersion=str(osVersion, 'utf-8').rstrip()
+    kernelVersion=str(kernelVersion, 'utf-8').rstrip()
+    unsupportedOs=str(unsupportedOs, 'utf-8').rstrip()
+    cpu=str(cpu, 'utf-8').rstrip()
+    memory=str(memory, 'utf-8').rstrip()
+    disk=str(disk, 'utf-8').rstrip()
+    hostType=str(hostType, 'utf-8').rstrip()
+    make=str(make, 'utf-8').rstrip()
+    model=str(model, 'utf-8').rstrip()
+    serialNumber=str(serialNumber, 'utf-8').rstrip()
+    kspliceStatus=str(kspliceStatus, 'utf-8').rstrip()
+    lastPatchTime=str(lastPatchTime, 'utf-8').rstrip()
+    outageStartDate1 = dateparser.parse(request.get_json()['outageStartDate'])
+    outageEndDate1 = dateparser.parse(request.get_json()['outageEndDate'])
+    print(outageStartDate1.strftime('%Y-%m-%d %H:%M:%S'))
+    print(outageEndDate1.strftime('%Y-%m-%d %H:%M:%S'))
+    disk1 = int(float(disk[:-3]))
+    print(disk1)
+    if disk1 >= 500 or hostType == "Physical":
+        takeSnapshot = "false"
+    else:
+        takeSnapshot = "true"
+    if kspliceStatus == "true":
+        rebootRequired = "false"
+    else:
+        rebootRequired = "true"
+    #outageStartDate1 = datetime.datetime.strptime(request.get_json()['outageStartDate'],"%Y-%m-%dT%H:%M:%S.%fZ")
+    myquery = {"hostName": hostname}
+    newValues = {"$set": {
+            "ip": ipaddress,
+            "zone": request.get_json()['zone'],
+            "environment": request.get_json()['environment'],
+            "org": request.get_json()['org'],
+            "owner": {
+                "productTeam": request.get_json()['productTeam'],
+                "appName": request.get_json()['appName'],
+                "email": request.get_json()['email']
+            },
+            "hardware": {
+                "hostType": hostType,
+                "make": make,
+                "model": model,
+                "serialNumber": serialNumber,
+                "consoleInfo": request.get_json()['consoleInfo']
+            },
+            "os": {
+                "osType": osType,
+                "osVersion": osVersion,
+                "kernelVersion": kernelVersion,
+                "unsupportedOs": unsupportedOs
+            },
+            "hostConfig": {
+                "cpu": cpu,
+                "memory": memory,
+                "disk": disk
+            },
+            "dataCenterLocation": request.get_json()['dataCenterLocation'],
+            "active": request.get_json()['active'],
+            "status": request.get_json()['status'], 
+            "outageWindow": {
+#                "frequency": "null",
+                "dayOfMonth": outageStartDate1.day,
+                "dayOfWeek": outageStartDate1.strftime('%A'),
+                "hourStart": outageStartDate1.hour,
+                "minStart": outageStartDate1.minute,
+                "duration": request.get_json()['duration'],
+                "outageStartDate": outageStartDate1.strftime('%Y-%m-%d %H:%M:%S'),
+                "outageEndDate": outageEndDate1.strftime('%Y-%m-%d %H:%M:%S')
+            },
+            "vcenter": {
+                "takeSnapshot": takeSnapshot,
+                "validation": request.get_json()['validation']
+            },
+            "ksplice": {
+                "kspliceStatus": kspliceStatus,
+
+            },
+            "rebootRequired": rebootRequired,
+            "lastPatchTime": lastPatchTime,
+#            "complianceStatus": "null",
+            "patchingException": request.get_json()['patchingException'],
+            "markedForDecom": request.get_json()['markedForDecom']
+    }}
+    print(newValues)
+    mycol = DBConnection()
+    try:
+        mycol.update_one(myquery,newValues)
+        task = {'status': 'Sucessfully updated record'}
+        res2 = json.dumps(task)
+        res1=json.loads(res2)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except Exception as e:
+     task = {'status': 'Someting went wrong in post data %s' % e}
+     #abort(404)
+     res2 = json.dumps(task)
+     res1=json.loads(res2)
+     response=make_response(res1,404)
+     response.headers.add('Access-Control-Allow-Origin', '*')
+     return response
+
+@Api_Controller.route('/api/bulkUpdate/<hostName>', methods=['PUT'])
+def bulkUpdate(hostName):
+    myquery = {"hostName": hostName}
+    print(hostName)
+    try:
+        newValues = {"$set": {}}
+        if 'validation' in request.get_json() and request.get_json()['validation']!= "":
+            newValues = {"$set": {"vcenter":{}}}
+            newValues["$set"]["vcenter"]["validation"] = request.get_json()['validation']
+        if 'outageStartDate' in request.get_json() and request.get_json()['outageStartDate']!= "" and request.get_json()['outageEndDate']:
+            newValues = {"$set": {"outageWindow":{}}}
+            outageStartDate1 = dateparser.parse(request.get_json()['outageStartDate'])
+            outageEndDate1 = dateparser.parse(request.get_json()['outageEndDate'])
+            newValues["$set"]["outageWindow"]["dayOfMonth"] = outageStartDate1.day
+            newValues["$set"]["outageWindow"]["dayOfWeek"] = outageStartDate1.strftime('%A')
+            newValues["$set"]["outageWindow"]["hourStart"] = outageStartDate1.hour
+            newValues["$set"]["outageWindow"]["minStart"] = outageStartDate1.minute
+            newValues["$set"]["outageWindow"]["duration"] = request.get_json()['duration']
+            newValues["$set"]["outageWindow"]["outageStartDate"] = outageStartDate1.strftime('%Y-%m-%d %H:%M:%S')
+            newValues["$set"]["outageWindow"]["outageEndDate"] = outageEndDate1.strftime('%Y-%m-%d %H:%M:%S')
+        if 'status' in request.get_json() and request.get_json()['status'] != "":
+            newValues["$set"]["status"] = request.get_json()['status']
+        if 'rebootRequired' in request.get_json() and request.get_json()['rebootRequired'] != "":
+            newValues["$set"]["rebootRequired"] = request.get_json()['rebootRequired']
+        if 'active' in request.get_json() and  request.get_json()['active']!= "":
+            newValues["$set"]["active"] = request.get_json()['active']
+
+        mycol = DBConnection()
+        mycol.update_one(myquery,newValues)
+        task = {'status': 'Sucessfully updated record'}
+        res2 = json.dumps(task)
+        res1=json.loads(res2)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except Exception as e:
+     task = {'status': 'Someting went wrong in post data %s' % e}
+     res2 = json.dumps(task)
+     res1=json.loads(res2)
+     response=make_response(res1,404)
+     response.headers.add('Access-Control-Allow-Origin', '*')
+     return response
+@Api_Controller.route('/api/delete/<hostName>', methods=['DELETE'])
+def delete(hostName):
+    myquery = {'hostName': hostName }
+    mycol = DBConnection()
+    try:
+        mycol.delete_one(myquery)
+        task = {'status': 'Success',"message":"Sucessfully Deleted"}
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,200)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    except Exception as e:
+        task = {'status': 'failed',"message":"Unable to delete"}
+        res = json.dumps(task)
+        res1=json.loads(res)
+        response=make_response(res1,404)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response

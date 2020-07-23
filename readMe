@@ -1,0 +1,4 @@
+Steps to run this code:
+mongo db container should be run
+docker build -t patch-it-framework .
+docker run -itd -p 5000:5000 --name patch-it-framework --link test-patchit-mongodb --net patch-it_default -v $PWD:/app  patch-it-framework
